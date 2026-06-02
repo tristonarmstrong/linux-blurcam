@@ -176,6 +176,9 @@ def cmd_run(args):
     # Open webcam
     print(f"Opening webcam {config['input']}...")
     cap = cv2.VideoCapture(config["input"])
+    # Request MJPG: uncompressed YUYV saturates USB bandwidth and caps
+    # high-res capture at a few fps.
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, config["width"])
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config["height"])
     cap.set(cv2.CAP_PROP_FPS, config["fps"])

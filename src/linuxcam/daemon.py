@@ -170,6 +170,12 @@ class BlurDaemon:
                             # Open webcam
                             if cap is None or not cap.isOpened():
                                 cap = cv2.VideoCapture(self.input_device)
+                                # Request MJPG: uncompressed YUYV saturates USB
+                                # bandwidth and caps high-res capture at a few fps.
+                                cap.set(
+                                    cv2.CAP_PROP_FOURCC,
+                                    cv2.VideoWriter_fourcc(*"MJPG"),
+                                )
                                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                                 cap.set(cv2.CAP_PROP_FPS, self.fps)
