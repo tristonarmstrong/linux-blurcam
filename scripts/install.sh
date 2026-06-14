@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # blurcam installer
-# Virtual webcam with AI background blur for Linux ARM64
+# Virtual webcam with AI background blur for Linux (GPU-accelerated)
 #
 # Usage:
 #   curl -sSL https://raw.githubusercontent.com/jolehuit/linux-blurcam/main/scripts/install.sh | bash

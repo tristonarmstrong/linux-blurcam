@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "blurcam"
 version = "1.0.0"
-description = "Virtual webcam with AI background blur for Linux ARM64 (Asahi, Raspberry Pi, etc.)"
+description = "Virtual webcam with AI background blur for Linux (GPU-accelerated with CUDA fallback)"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "Linux ARM64 Community"}
 ]
-keywords = ["virtual-camera", "v4l2loopback", "webcam", "blur", "background", "arm64", "asahi", "raspberry-pi"]
+keywords = ["virtual-camera", "v4l2loopback", "webcam", "blur", "background", "arm64", "asahi", "raspberry-pi", "cuda", "gpu"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -28,15 +28,21 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy>=2.0.0",
-    "opencv-python-headless>=4.10.0",
-    "onnxruntime>=1.20.0",
+    "numpy>=1.26.0,<2",
+    "opencv-python>=4.10.0",
+    "onnxruntime-gpu>=1.26.0",
     "pyvirtualcam>=0.14.0",
     "huggingface-hub>=1.0.0",
     "inotify-simple>=2.0.0",
 ]
 
 [project.optional-dependencies]
+cpu = [
+    "onnxruntime>=1.20.0",
+]
+gpu = [
+    "onnxruntime-gpu>=1.26.0",
+]
 dev = [
     "pytest>=7.0",
     "black",

@@ -2,6 +2,7 @@
 """
 blurcam-setup - Check and configure system dependencies for blurcam
 
+GPU-accelerated via ONNX Runtime CUDA (falls back to CPU if GPU unavailable).
 Detects your Linux distribution and provides appropriate installation commands.
 """
 
