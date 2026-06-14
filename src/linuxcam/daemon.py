@@ -16,9 +16,10 @@ from inotify_simple import INotify, flags
 class BlurDaemon:
     """Always writes to virtual cam. Blur activates when consumers connect."""
 
-    def __init__(self, device="/dev/video10", input_device=0):
+    def __init__(self, device="/dev/video10", input_device=0, profile=False):
         self.device = device
         self.input_device = input_device
+        self.profile = profile
         self.blur_active = False
         self.stop_event = threading.Event()
         self.consumer_event = threading.Event()  # Set when consumer state changes
@@ -100,7 +101,7 @@ class BlurDaemon:
         import cv2
         import pyvirtualcam
         from .models import get_model_path
-        from .segmentation import SelfieSegmentation, apply_background_blur
+        from .segmentation import SelfieSegmentation, render_frame, FrameTimer
         from .config import load_config, get_config_mtime
 
         print(f"blurcam daemon started", flush=True)
@@ -139,6 +140,15 @@ class BlurDaemon:
         if blur_strength % 2 == 0:
             blur_strength += 1
         threshold = self.config["threshold"]
+        debug_mode = self.config.get("debug", "blur")
+        show_fps = self.config.get("show_fps", False)
+        current_model = self.config.get("model", "mediapipe")
+
+        frame_count = 0
+        start_time = time.time()
+        fps_val = 0.0
+        timer = FrameTimer(window=60)
+        profile_counter = 0
 
         try:
             with pyvirtualcam.Camera(
@@ -150,6 +160,7 @@ class BlurDaemon:
             ) as vcam:
                 print(f"Virtual camera ready: {vcam.device}", flush=True)
                 print(f"Select 'BlurCam' in your video app", flush=True)
+                print(f"Debug mode: {debug_mode}", flush=True)
                 print(flush=True)
 
                 while not self.stop_event.is_set():
@@ -164,8 +175,10 @@ class BlurDaemon:
 
                             # Load model if needed
                             if segmentation is None:
-                                model_path = get_model_path()
+                                model_path = get_model_path(model_name=self.config.get("model", "mediapipe"))
                                 segmentation = SelfieSegmentation(model_path)
+                                print(f"Model loaded from {model_path}", flush=True)
+                                current_model = self.config.get("model", "mediapipe")
 
                             # Open webcam
                             if cap is None or not cap.isOpened():
@@ -203,16 +216,58 @@ class BlurDaemon:
                         if blur_strength % 2 == 0:
                             blur_strength += 1
                         threshold = self.config["threshold"]
+                        debug_mode = self.config.get("debug", "blur")
+                        show_fps = self.config.get("show_fps", False)
+
+                        # Hot-swap model if changed
+                        new_model = self.config.get("model", "mediapipe")
+                        if new_model != current_model:
+                            print(f"Model config changed: {current_model} -> {new_model}", flush=True)
+                            current_model = new_model
+                            if segmentation is not None:
+                                segmentation = None
+                                print(f"Model will reload on next consumer connect", flush=True)
 
                     # Generate frame
                     if self.blur_active and cap is not None and cap.isOpened():
+                        t_capture = time.perf_counter()
                         ret, frame = cap.read()
+                        if timer:
+                            timer.mark("capture", t_capture)
                         if ret:
-                            # Apply blur
-                            mask = segmentation.get_mask(frame, threshold=threshold)
-                            result = apply_background_blur(frame, mask, blur_strength)
+                            # Segmentation
+                            raw_mask = segmentation.predict(frame, timer=timer)
+                            mask = segmentation.get_mask(frame, threshold=threshold, timer=timer)
+
+                            # FPS counter
+                            frame_count += 1
+                            elapsed = time.time() - start_time
+                            if elapsed >= 1.0:
+                                fps_val = frame_count / elapsed
+                                frame_count = 0
+                                start_time = time.time()
+                                # Print profiling every 3 seconds if enabled
+                                if self.profile:
+                                    profile_counter += 1
+                                    if profile_counter % 3 == 0:
+                                        print(f"\r{timer.report(f'FPS={fps_val:.1f}')}  ", end="", flush=True)
+                                        profile_counter = 0
+
+                            result = render_frame(
+                                frame, mask, raw_mask,
+                                mode=debug_mode,
+                                blur_strength=blur_strength,
+                                fps=fps_val if show_fps else None,
+                                timer=timer,
+                            )
+                            t_convert = time.perf_counter()
                             result_rgb = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+                            if timer:
+                                timer.mark("cvtColor", t_convert)
+                            t_send = time.perf_counter()
                             vcam.send(result_rgb)
+                            if timer:
+                                timer.mark("send", t_send)
                         else:
                             vcam.send(black_frame)
                     else:
@@ -231,7 +286,7 @@ class BlurDaemon:
         return 0
 
 
-def run_daemon(input_device=0, output_device="/dev/video10"):
+def run_daemon(input_device=0, output_device="/dev/video10", profile=False):
     """Entry point for daemon mode."""
-    daemon = BlurDaemon(device=output_device, input_device=input_device)
+    daemon = BlurDaemon(device=output_device, input_device=input_device, profile=profile)
     return daemon.run()

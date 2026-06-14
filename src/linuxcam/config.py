@@ -16,6 +16,10 @@ DEFAULT_CONFIG = {
     "width": 640,
     "height": 480,
     "fps": 30,
+    "debug": "blur",
+    "show_fps": False,
+    "profile": False,
+    "model": "mediapipe",
 }
 
 
