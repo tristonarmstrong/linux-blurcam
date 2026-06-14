@@ -1,8 +1,9 @@
 """
-blurcam - Virtual webcam with AI background blur for Linux ARM64
+blurcam - Virtual webcam with AI background blur for Linux
 
-Works on Asahi Linux, Raspberry Pi, Ubuntu ARM64, Fedora ARM64, and more.
-No MediaPipe dependency - uses pure ONNX Runtime for ARM64 compatibility.
+GPU-accelerated via ONNX Runtime CUDA (falls back to CPU if GPU unavailable).
+Works on x86_64 and ARM64 (Asahi Linux, Raspberry Pi, Ubuntu, Fedora, Arch, etc.).
+No MediaPipe dependency - uses pure ONNX Runtime for broad compatibility.
 """
 
 __version__ = "1.0.0"
