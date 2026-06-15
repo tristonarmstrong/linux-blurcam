@@ -161,7 +161,7 @@ def cmd_run(args):
     import numpy as np
     import pyvirtualcam
     from .models import get_model_path
-    from .segmentation import SelfieSegmentation, render_frame
+    from .segmentation import SelfieSegmentation, render_frame, resize_to_fit
     from .config import get_config_path
 
     # Load config
@@ -253,6 +253,10 @@ def cmd_run(args):
                 if not ret:
                     print("Error reading frame", file=sys.stderr)
                     break
+
+                # Ensure frame matches virtual camera dimensions (webcam may not honor requested resolution)
+                if frame.shape[0] != actual_height or frame.shape[1] != actual_width:
+                    frame = resize_to_fit(frame, actual_width, actual_height)
 
                 # Check for config changes every second
                 now = time.time()

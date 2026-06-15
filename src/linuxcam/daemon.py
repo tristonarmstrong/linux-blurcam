@@ -101,7 +101,7 @@ class BlurDaemon:
         import cv2
         import pyvirtualcam
         from .models import get_model_path
-        from .segmentation import SelfieSegmentation, render_frame, FrameTimer
+        from .segmentation import SelfieSegmentation, render_frame, FrameTimer, resize_to_fit
         from .config import load_config, get_config_mtime
 
         print(f"blurcam daemon started", flush=True)
@@ -196,6 +196,10 @@ class BlurDaemon:
                                 if not cap.isOpened():
                                     print(f"Error: Could not open webcam", file=sys.stderr, flush=True)
                                     self.blur_active = False
+                                else:
+                                    actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                    actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                    print(f"Webcam actual resolution: {actual_width}x{actual_height}", flush=True)
 
                         elif not self.has_consumers and self.blur_active:
                             # No consumers - stop blur IMMEDIATELY
@@ -235,6 +239,10 @@ class BlurDaemon:
                         if timer:
                             timer.mark("capture", t_capture)
                         if ret:
+                            # Ensure frame matches expected dimensions (webcam may not support requested resolution)
+                            if frame.shape[0] != self.height or frame.shape[1] != self.width:
+                                frame = resize_to_fit(frame, self.width, self.height)
+
                             # Segmentation
                             raw_mask = segmentation.predict(frame, timer=timer)
                             mask = segmentation.get_mask(frame, threshold=threshold, timer=timer)
