@@ -156,20 +156,66 @@ def apply_background_blur(
     frame: np.ndarray, mask: np.ndarray, blur_strength: int = 21,
     timer: FrameTimer | None = None,
 ) -> np.ndarray:
-    """Apply blur to background while keeping foreground sharp."""
+    """Apply blur to background while keeping foreground sharp.
+
+    Background is blurred at 1/3 resolution for speed, then upscaled.
+    The composite (blend) runs at full resolution on the GPU via OpenCL
+    so the foreground subject stays perfectly sharp.
+    """
     t0 = _now()
     if blur_strength % 2 == 0:
         blur_strength += 1
 
-    blurred = cv2.GaussianBlur(frame, (blur_strength, blur_strength), 0)
-    t1 = _now()
-    mask_3ch = np.stack([mask] * 3, axis=-1)
-    t2 = _now()
-    result = (frame * mask_3ch + blurred * (1 - mask_3ch)).astype(np.uint8)
+    orig_h, orig_w = frame.shape[:2]
+
+    # Processing resolution: 1/3 scale with minimums
+    proc_w = max(320, orig_w // 3)
+    proc_h = max(180, orig_h // 3)
+    proc_w += proc_w % 2
+    proc_h += proc_h % 2
+
+    # Scale kernel to processing resolution so visual strength stays consistent
+    kernel_proc = max(3, blur_strength // 3)
+    if kernel_proc % 2 == 0:
+        kernel_proc += 1
+
+    # 1. Blur background at low resolution
+    if orig_w != proc_w or orig_h != proc_h:
+        frame_proc = cv2.resize(frame, (proc_w, proc_h), interpolation=cv2.INTER_AREA)
+    else:
+        frame_proc = frame
+
+    blurred_proc = cv2.GaussianBlur(frame_proc, (kernel_proc, kernel_proc), 0)
+
+    # 2. Upscale blurred background to full resolution
+    if orig_w != proc_w or orig_h != proc_h:
+        blurred = cv2.resize(blurred_proc, (orig_w, orig_h), interpolation=cv2.INTER_CUBIC)
+    else:
+        blurred = blurred_proc
+
+    # 3. Composite at full resolution on GPU (OpenCL)
+    #    Upload inputs once, all math stays on the device, download final uint8.
+    frame_u = cv2.UMat(frame)
+    blurred_u = cv2.UMat(blurred)
+    mask_u = cv2.UMat(mask)
+
+    # Expand mask to 3 channels so multiply works with 3-channel images
+    mask_3ch_u = cv2.merge([mask_u, mask_u, mask_u])
+
+    # foreground = frame * mask
+    fg_u = cv2.multiply(frame_u, mask_3ch_u, dtype=cv2.CV_32F)
+    # background = blurred * (1 - mask)
+    inv_mask_u = cv2.subtract(1.0, mask_3ch_u)
+    bg_u = cv2.multiply(blurred_u, inv_mask_u, dtype=cv2.CV_32F)
+    # result = fg + bg
+    result_u = cv2.add(fg_u, bg_u)
+
+    # Download from GPU and convert to uint8 numpy array
+    result_u8 = cv2.convertScaleAbs(result_u, alpha=1.0, beta=0)
+    result = cv2.UMat.get(result_u8)
+
     if timer:
         timer.mark("blur", t0)
-        timer.mark("blur-op", t1)
-        timer.mark("blend", t2)
     return result
 
 
@@ -292,3 +338,27 @@ def render_frame(
         timer.mark("render", t0)
 
     return out
+
+
+def resize_to_fit(frame: np.ndarray, target_width: int, target_height: int) -> np.ndarray:
+    """Resize frame to fit target dimensions while preserving aspect ratio.
+    Pads with black bars to fill the target dimensions.
+    """
+    h, w = frame.shape[:2]
+    if w == target_width and h == target_height:
+        return frame
+
+    scale = min(target_width / w, target_height / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    # Use sharper interpolation for upscaling, area for downscaling
+    interp = cv2.INTER_CUBIC if scale > 1.0 else cv2.INTER_AREA
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=interp)
+
+    result = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+    y_offset = (target_height - new_h) // 2
+    x_offset = (target_width - new_w) // 2
+    result[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+
+    return result
