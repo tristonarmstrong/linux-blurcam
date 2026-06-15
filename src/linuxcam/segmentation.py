@@ -292,3 +292,27 @@ def render_frame(
         timer.mark("render", t0)
 
     return out
+
+
+def resize_to_fit(frame: np.ndarray, target_width: int, target_height: int) -> np.ndarray:
+    """Resize frame to fit target dimensions while preserving aspect ratio.
+    Pads with black bars to fill the target dimensions.
+    """
+    h, w = frame.shape[:2]
+    if w == target_width and h == target_height:
+        return frame
+
+    scale = min(target_width / w, target_height / h)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    # Use sharper interpolation for upscaling, area for downscaling
+    interp = cv2.INTER_CUBIC if scale > 1.0 else cv2.INTER_AREA
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=interp)
+
+    result = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+    y_offset = (target_height - new_h) // 2
+    x_offset = (target_width - new_w) // 2
+    result[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+
+    return result
